@@ -16,7 +16,11 @@ An autonomous, AI-driven Revenue Recovery & Intelligent Dunning Agent designed t
 
 ---
 
-## 🏗️ Architecture & Workflow
+## 🏗️ System Architecture
+
+![Revenue Recovery Agent Architecture](assets/architecture_diagram.jpg)
+
+### End-to-End Recovery Flow
 
 ```mermaid
 graph TD
