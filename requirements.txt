@@ -1,0 +1,25 @@
+# requirements.txt
+# Core Web Framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Database & Queue
+asyncpg==0.30.0          # Async Postgres driver
+redis==5.2.1             # For queuing & caching later
+sqlalchemy==2.0.36       # (Optional) If you prefer ORM over raw SQL
+
+# External Integrations
+stripe==11.3.0           # For PSP webhook verification
+httpx==0.28.1            # For polling external AR systems
+python-dotenv==1.0.1     # Manage environment variables
+
+# Data & Utilities
+python-multipart==0.0.20 # For form data parsing
+ujson==5.10.0            # Faster JSON parsing
+openai
+twilio
+sendgrid
+slack-sdk
+google-generativeai
