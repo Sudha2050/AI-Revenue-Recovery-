@@ -1,8 +1,12 @@
-# 💰 Revenue Recovery Agent
+# 💰 Revenue Recovery Agent `[Buildathon]`
 
-> **Built for the Build-a-thon Challenge by Razorpay** 🚀
+[![Buildathon](https://img.shields.io/badge/Project-Razorpay%20Buildathon-blueviolet?style=for-the-badge&logo=razorpay)](https://razorpay.com)
+[![Python](https://img.shields.io/badge/Python-3.13-blue?style=for-the-badge&logo=python)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
+[![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-orange?style=for-the-badge&logo=google)](https://ai.google.dev)
 
-An autonomous, AI-driven Revenue Recovery & Intelligent Dunning Agent designed to detect payment failures, diagnose root causes with customer context, decide optimal recovery strategies using a hybrid Rules + Gemini LLM engine, execute multi-channel communications, and prevent involuntary churn.
+> 🚀 **[Buildathon] Project Submission**  
+> This project was developed and built for the **Razorpay Buildathon Challenge**. It is an autonomous, AI-driven Revenue Recovery & Intelligent Dunning Agent engineered to detect payment failures, diagnose root causes with rich customer context, decide optimal recovery strategies using a hybrid Rules + Gemini LLM engine, execute multi-channel communications, and prevent involuntary churn.
 
 ---
 
