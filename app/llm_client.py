@@ -2,103 +2,68 @@
 import os
 import json
 import asyncio
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Configure Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 if GEMINI_API_KEY:
+    import google.generativeai as genai
     genai.configure(api_key=GEMINI_API_KEY)
-    # Use Flash for speed and cost (supports JSON mode)
     model = genai.GenerativeModel('gemini-1.5-flash')
+    print("✅ Gemini 1.5 Flash initialized.")
 else:
     model = None
-    print("⚠️ WARNING: GEMINI_API_KEY not set. LLM will fallback to rules.")
+    print("⚠️ GEMINI_API_KEY not set. LLM will use mock reasoning.")
 
-async def llm_diagnose(
-    error_code: str, 
-    error_message: str, 
-    amount: float, 
-    event_type: str,
-    context: dict
-):
+async def llm_diagnose(invoice_data: dict, account_signals: dict) -> dict:
     """
-    Calls Gemini with enriched Customer Context.
+    Call Gemini API to diagnose complex B2B payment failures.
+    If API key missing, return a mock diagnosis.
     """
     if not model:
-        return {
-            "action": "human_handoff",
-            "delay_hours": 0,
-            "reasoning": "LLM not configured. Escalating to human."
-        }
+        # Mock diagnosis for fallback
+        if invoice_data.get('days_overdue', 0) > 60:
+            return {"action": "rm_handoff", "root_cause": "chronic_late",
+                    "reasoning": "Mock LLM: overdue >60 days, escalate to RM."}
+        return {"action": "send_email", "root_cause": "process_breakdown",
+                "reasoning": "Mock LLM: generic case, send reminder."}
 
-    # Build a prompt that tells Gemini WHO the customer is
     prompt = f"""
-    You are an AI revenue recovery assistant for a payment gateway in India.
-    
-    --- CUSTOMER CONTEXT (CRITICAL) ---
-    Customer Segment: {context.get('segment', 'standard')}
-    Customer LTV: ${context.get('ltv', 0)}
-    Plan: {context.get('plan', 'monthly')}
-    Total payment attempts (last 3 months): {context.get('total_attempts', 0)}
-    Failed attempts (last 3 months): {context.get('failed_attempts', 0)}
-    Is this their first failure? {"Yes" if context.get('is_first_failure') else "No"}
-    Is this a repeat offender? {"Yes" if context.get('is_repeat_offender') else "No"}
-    
-    --- PAYMENT FAILURE CONTEXT ---
-    Event Type: {event_type}
-    Amount: ₹{amount} (INR)
-    Error Code: {error_code}
-    Error Message: {error_message}
-    
-    --- YOUR TASK ---
-    Based on the customer context and the error, choose the best recovery action:
-    1. retry_payment (wait X hours before retrying)
-    2. send_email (ask customer to update payment method or switch billing date)
-    3. send_sms (send a reminder with a payment link)
-    4. human_handoff (escalate to a human agent)
-    
-    --- GUIDELINES (Rule-Based Context) ---
-    - First-time failures for High-LTV customers: Retry in 72 hours (payday aligned). Send a friendly heads-up email.
-    - Repeat insufficient-funds failures (2+ times): Offer to switch billing date or update payment method instead of blind retry.
-    - Free trial users: Only 1 automated retry, then stop (no spam).
-    - Fraud/Dispute: Always human handoff.
-    - For standard customers: Retry in 24 hours, then escalate if it fails again.
-    
-    Respond ONLY in valid JSON format:
-    {{"action": "action_name", "delay_hours": 24, "reasoning": "brief explanation including why this action matches this customer context"}}
-    """
-    
+You are a B2B receivables recovery assistant for a Payments Bank.
+Analyze this case and provide a diagnosis.
+
+Invoice Data:
+- Amount: ₹{invoice_data.get('amount', 0)}
+- Days Overdue: {invoice_data.get('days_overdue', 0)}
+- Payment Rail: {invoice_data.get('payment_rail', 'unknown')}
+- Failure Code: {invoice_data.get('failure_code', 'none')}
+
+Account Signals:
+- Balance Trend: {account_signals.get('balance_trend', 'healthy')}
+- Dispute Flag: {account_signals.get('dispute_flag', False)}
+- Mandate Revoked: {account_signals.get('mandate_revoked', False)}
+- Account Frozen: {account_signals.get('account_frozen', False)}
+
+Choose one root cause: process_breakdown, liquidity_issue, dispute, chronic_late, willful_default.
+Choose one action: send_email, offer_plan, rm_handoff, halt.
+
+Respond in JSON: {{"action": "...", "root_cause": "...", "reasoning": "..."}}
+"""
     try:
-        def _sync_call():
+        def _sync():
             response = model.generate_content(
                 prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "temperature": 0.3  # Slightly higher for nuanced reasoning
-                }
+                generation_config={"response_mime_type": "application/json", "temperature": 0.2}
             )
-            return response.text
-        
-        result_text = await asyncio.to_thread(_sync_call)
-        result = json.loads(result_text)
-        
-        action = result.get("action", "human_handoff")
-        if action not in ["retry_payment", "send_email", "send_sms", "human_handoff"]:
-            action = "human_handoff"
-        
+            return json.loads(response.text)
+        result = await asyncio.to_thread(_sync)
         return {
-            "action": action,
-            "delay_hours": result.get("delay_hours", 24),
-            "reasoning": result.get("reasoning", "LLM decided based on context.")
+            "action": result.get("action", "send_email"),
+            "root_cause": result.get("root_cause", "process_breakdown"),
+            "reasoning": result.get("reasoning", "LLM diagnosis completed.")
         }
-        
     except Exception as e:
-        print(f"⚠️ Gemini API error: {e}")
-        return {
-            "action": "human_handoff",
-            "delay_hours": 0,
-            "reasoning": f"Gemini API error: {str(e)}. Escalating to human."
-        }
+        print(f"⚠️ Gemini API error: {e}. Falling back to mock.")
+        return {"action": "send_email", "root_cause": "process_breakdown",
+                "reasoning": f"LLM unavailable: {str(e)}. Escalating to manual review."}

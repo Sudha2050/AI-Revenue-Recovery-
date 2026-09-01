@@ -38,6 +38,7 @@ async def seed():
             days_overdue INT DEFAULT 0,
             recovery_status TEXT DEFAULT 'new',
             contact_attempts INT DEFAULT 0,
+            contact_timestamps JSONB DEFAULT '[]'::jsonb,
             retry_count INT DEFAULT 0,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -52,7 +53,7 @@ async def seed():
         );
         CREATE TABLE IF NOT EXISTS cases (
             id SERIAL PRIMARY KEY,
-            invoice_id TEXT REFERENCES invoices(invoice_id),
+            invoice_id TEXT UNIQUE REFERENCES invoices(invoice_id),
             company_id TEXT REFERENCES companies(company_id),
             status TEXT,
             root_cause TEXT,
@@ -64,8 +65,17 @@ async def seed():
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         );
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS contact_timestamps JSONB DEFAULT '[]'::jsonb;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'cases_invoice_id_key'
+            ) THEN
+                ALTER TABLE cases ADD CONSTRAINT cases_invoice_id_key UNIQUE (invoice_id);
+            END IF;
+        END $$;
     """)
-    print("✅ Tables created.")
+    print("✅ Tables created and migrated.")
 
     # 2. Seed companies
     companies = [
