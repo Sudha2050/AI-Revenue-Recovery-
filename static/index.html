@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>B2B Receivables Agent — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-title">
+        <h1>🏦 B2B Receivables Agent</h1>
+        <p>Autonomous AI revenue recovery, dunning workflows & real-time tracking</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-action btn-primary" id="processBtn">⚡ Run Orchestrator</button>
+        <button class="btn-action" id="refreshBtn">🔄 Refresh</button>
+      </div>
+    </header>
+
+    <div class="grid" id="statsGrid">
+      <div class="card">
+        <h3>₹ At Risk</h3>
+        <div class="number red" id="atRisk">₹0.00</div>
+      </div>
+      <div class="card">
+        <h3>₹ Recovered</h3>
+        <div class="number green" id="recovered">₹0.00</div>
+      </div>
+      <div class="card">
+        <h3>₹ Promised</h3>
+        <div class="number blue" id="promised">₹0.00</div>
+      </div>
+      <div class="card">
+        <h3>RM Escalations</h3>
+        <div class="number" id="escalated">0</div>
+      </div>
+      <div class="card card-highlight">
+        <h3>✅ Compliance Violations</h3>
+        <div class="number green">0</div>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <span>Case Feed</span>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Case ID</th>
+            <th>Company</th>
+            <th>Invoice</th>
+            <th>Amount</th>
+            <th>Root Cause</th>
+            <th>Status</th>
+            <th>Last Action</th>
+          </tr>
+        </thead>
+        <tbody id="caseFeed">
+          <tr>
+            <td colspan="7" style="text-align:center;padding:30px;color:#64748B;">Loading case records...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -4,97 +4,108 @@ import asyncpg
 import json
 import os
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
-# Load credentials from .env file
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL not set in .env file!")
-
 async def seed():
-    print(f"🔗 Connecting to database...")
     conn = await asyncpg.connect(DATABASE_URL)
-    
-    print("✅ Connected to database successfully!")
-    
-    # --- 1. Create Tables ---
-    print("📦 Creating tables if they don't exist...")
+    print("✅ Connected to DB.")
+
+    # 1. Create tables
     await conn.execute("""
-        CREATE TABLE IF NOT EXISTS customers (
-            customer_id TEXT PRIMARY KEY,
-            email TEXT,
-            phone TEXT,
-            crm_data JSONB
+        CREATE TABLE IF NOT EXISTS companies (
+            company_id TEXT PRIMARY KEY,
+            name TEXT,
+            sector TEXT,
+            ltv DECIMAL,
+            balance_trend TEXT,
+            account_frozen BOOLEAN DEFAULT FALSE,
+            dispute_flag BOOLEAN DEFAULT FALSE,
+            mandate_revoked BOOLEAN DEFAULT FALSE,
+            willful_default BOOLEAN DEFAULT FALSE,
+            ap_contact JSONB,
+            payment_history JSONB
         );
-    """)
-    
-    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS invoices (
+            invoice_id TEXT PRIMARY KEY,
+            company_id TEXT REFERENCES companies(company_id),
+            amount DECIMAL,
+            due_date TIMESTAMP,
+            payment_rail TEXT,
+            failure_code TEXT,
+            days_overdue INT DEFAULT 0,
+            recovery_status TEXT DEFAULT 'new',
+            contact_attempts INT DEFAULT 0,
+            retry_count INT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
         CREATE TABLE IF NOT EXISTS raw_events (
             id SERIAL PRIMARY KEY,
-            event_id TEXT UNIQUE NOT NULL,
-            event_type TEXT NOT NULL,
-            customer_id TEXT NOT NULL,
-            payload JSONB NOT NULL,
-            canonical_event JSONB NOT NULL,
-            ingested_at TIMESTAMP DEFAULT NOW(),
-            is_processed BOOLEAN DEFAULT FALSE
+            event_id TEXT UNIQUE,
+            event_type TEXT,
+            payload JSONB,
+            is_processed BOOLEAN DEFAULT FALSE,
+            ingested_at TIMESTAMP DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS cases (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT REFERENCES invoices(invoice_id),
+            company_id TEXT REFERENCES companies(company_id),
+            status TEXT,
+            root_cause TEXT,
+            amount DECIMAL,
+            last_action TEXT,
+            llm_reasoning TEXT,
+            current_contact_attempt INT DEFAULT 0,
+            scheduled_next_action_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
         );
     """)
-    
-    await conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_raw_events_unprocessed 
-        ON raw_events (is_processed, ingested_at);
-    """)
-    print("✅ Tables and indexes are ready.")
+    print("✅ Tables created.")
 
-    # --- 2. Insert Mock Customer ---
-    print("👤 Inserting mock customer...")
-    await conn.execute(
-        """
-        INSERT INTO customers (customer_id, email, phone, crm_data) 
-        VALUES ($1, $2, $3, $4) 
-        ON CONFLICT (customer_id) DO NOTHING
-        """,
-        'cus_123', 
-        'ravi@example.com', 
-        '+91999999999', 
-        json.dumps({"source": "manual_seed"})
-    )
+    # 2. Seed companies
+    companies = [
+        {"company_id": "comp_001", "name": "Acme Corp", "sector": "Manufacturing", "ltv": 500000, "balance_trend": "declining", "ap_contact": {"email": "ap@acme.com", "phone": "9999999999"}},
+        {"company_id": "comp_002", "name": "TechNova", "sector": "Technology", "ltv": 1200000, "balance_trend": "healthy", "ap_contact": {"email": "finance@technova.com", "phone": "8888888888"}},
+        {"company_id": "comp_003", "name": "Solaris Labs", "sector": "Energy", "ltv": 300000, "balance_trend": "critical", "dispute_flag": True, "ap_contact": {"email": "accounts@solaris.com"}},
+        {"company_id": "comp_004", "name": "Fenwick Group", "sector": "Finance", "ltv": 800000, "balance_trend": "healthy", "ap_contact": {"email": "payments@fenwick.com"}},
+    ]
+    for c in companies:
+        await conn.execute("""
+            INSERT INTO companies (company_id, name, sector, ltv, balance_trend, dispute_flag, ap_contact)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (company_id) DO NOTHING
+        """, c["company_id"], c["name"], c["sector"], c["ltv"], c["balance_trend"], c.get("dispute_flag", False), json.dumps(c["ap_contact"]))
+    print("✅ Companies seeded.")
 
-    # --- 3. Insert Mock Failed Payment Event ---
-    print("💳 Inserting mock failed payment event...")
-    canonical_event = {
-        "event_id": "sim_001",
-        "customer_id": "cus_123",
-        "event_type": "payment_failed",
-        "amount_usd": 49.99,
-        "currency": "USD",
-        "raw_error_code": "insufficient_funds",
-        "raw_error_message": "Insufficient balance in account"
-    }
-    
-    await conn.execute(
-        """
-        INSERT INTO raw_events (event_id, event_type, customer_id, payload, canonical_event) 
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (event_id) DO NOTHING
-        """,
-        'sim_001',
-        'payment_failed',
-        'cus_123',
-        json.dumps({"webhook_payload": "mock_test"}),
-        json.dumps(canonical_event)
-    )
-    
-    print("✅ Seed data inserted successfully!")
-    
-    # --- 4. Verify ---
-    count = await conn.fetchval("SELECT COUNT(*) FROM raw_events")
-    print(f"📊 Total events in raw_events table: {count}")
-    
+    # 3. Seed invoices (some overdue)
+    due_date = datetime.now() - timedelta(days=45)
+    invoices = [
+        {"invoice_id": "INV-001", "company_id": "comp_001", "amount": 450000, "payment_rail": "NEFT", "failure_code": "insufficient_funds"},
+        {"invoice_id": "INV-002", "company_id": "comp_002", "amount": 120000, "payment_rail": "UPI", "failure_code": "mandate_expired"},
+        {"invoice_id": "INV-003", "company_id": "comp_003", "amount": 800000, "payment_rail": "RTGS", "failure_code": "dispute"},
+        {"invoice_id": "INV-004", "company_id": "comp_004", "amount": 210000, "payment_rail": "NACH", "failure_code": "process_breakdown"},
+    ]
+    for inv in invoices:
+        await conn.execute("""
+            INSERT INTO invoices (invoice_id, company_id, amount, due_date, payment_rail, failure_code, days_overdue)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (invoice_id) DO NOTHING
+        """, inv["invoice_id"], inv["company_id"], inv["amount"], due_date, inv["payment_rail"], inv["failure_code"], 45)
+
+        # Insert raw events for processing
+        await conn.execute("""
+            INSERT INTO raw_events (event_id, event_type, payload)
+            VALUES ($1, $2, $3) ON CONFLICT (event_id) DO NOTHING
+        """, f"seed_{inv['invoice_id']}", "b2b_invoice", json.dumps({"invoice_id": inv["invoice_id"], "company_id": inv["company_id"]}))
+    print("✅ Invoices and raw events seeded.")
+    print("🎉 Database seeded successfully. Run the server and trigger /admin/process")
+
     await conn.close()
-    print("🔒 Database connection closed.")
 
 if __name__ == "__main__":
     asyncio.run(seed())
