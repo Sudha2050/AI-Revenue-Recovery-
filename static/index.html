@@ -3,18 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>B2B Receivables Agent — Dashboard</title>
+  <title>B2B Receivables & PTP Agent — Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .grid-ptp { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .badge-ptp-active { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .badge-ptp-completed { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-ptp-broken { background: rgba(239, 68, 68, 0.15); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .type-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; }
+    .type-case { background: #334155; color: #94A3B8; }
+    .type-ptp { background: #4C1D95; color: #C4B5FD; }
+  </style>
 </head>
 <body>
   <div class="container">
     <header>
       <div class="header-title">
-        <h1>🏦 B2B Receivables Agent</h1>
-        <p>Autonomous AI revenue recovery, dunning workflows & real-time tracking</p>
+        <h1>🏦 B2B Receivables & <span>PTP</span> Agent</h1>
+        <p>Autonomous AI revenue recovery, PTP installment tracking & real-time analytics</p>
       </div>
       <div class="header-actions">
         <button class="btn-action btn-primary" id="processBtn">⚡ Run Orchestrator</button>
@@ -22,7 +31,15 @@
       </div>
     </header>
 
+    <!-- SECTION 1: Recovery Overview -->
+    <div class="section-title">
+      <span>📊 Recovery Overview</span>
+    </div>
     <div class="grid" id="statsGrid">
+      <div class="card">
+        <h3>Total Cases</h3>
+        <div class="number" id="totalCases">0</div>
+      </div>
       <div class="card">
         <h3>₹ At Risk</h3>
         <div class="number red" id="atRisk">₹0.00</div>
@@ -37,7 +54,7 @@
       </div>
       <div class="card">
         <h3>RM Escalations</h3>
-        <div class="number" id="escalated">0</div>
+        <div class="number amber" id="escalated">0</div>
       </div>
       <div class="card card-highlight">
         <h3>✅ Compliance Violations</h3>
@@ -45,6 +62,35 @@
       </div>
     </div>
 
+    <!-- SECTION 2: Promise-to-Pay (PTP) Tracker -->
+    <div class="section-title">
+      <span>📝 Promise-to-Pay (PTP) Tracker</span>
+    </div>
+    <div class="grid-ptp">
+      <div class="card">
+        <h3>Total PTPs</h3>
+        <div class="number" id="totalPTPs">0</div>
+      </div>
+      <div class="card">
+        <h3>🟢 Active PTPs</h3>
+        <div class="number blue" id="activePTPs">0</div>
+      </div>
+      <div class="card">
+        <h3>✅ Completed</h3>
+        <div class="number green" id="completedPTPs">0</div>
+      </div>
+      <div class="card">
+        <h3>❌ Broken</h3>
+        <div class="number red" id="brokenPTPs">0</div>
+      </div>
+      <div class="card" style="grid-column: span 2;">
+        <h3>💰 PTP Recovery Rate</h3>
+        <div class="number green" id="ptpRecoveryRate">0.0%</div>
+        <small style="color: #94A3B8;" id="ptpRecoverySub">₹0.00 recovered of ₹0.00 promised</small>
+      </div>
+    </div>
+
+    <!-- SECTION 3: Customer Response Simulator -->
     <div class="section-title">
       <span>Customer Inbound Response Simulator (AI / NLP Intent Classifier)</span>
     </div>
@@ -56,7 +102,7 @@
         </div>
         <div>
           <label style="font-size: 12px; color: #94A3B8; display: block; margin-bottom: 4px;">Customer Message / Reply</label>
-          <input type="text" id="simMessage" placeholder="e.g. We will remit payment by next Monday" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0F172A; border: 1px solid #334155; color: #F8FAFC;" required>
+          <input type="text" id="simMessage" placeholder="e.g. We will remit ₹50,000 today and rest next week" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0F172A; border: 1px solid #334155; color: #F8FAFC;" required>
         </div>
         <div>
           <label style="font-size: 12px; color: #94A3B8; display: block; margin-bottom: 4px;">Channel</label>
@@ -70,26 +116,27 @@
       <div id="simFeedback" style="margin-top: 10px; font-size: 13px; display: none;"></div>
     </div>
 
+    <!-- SECTION 4: Recent Activity Feed -->
     <div class="section-title">
-      <span>Case Feed</span>
+      <span>📋 Activity & Case Feed</span>
     </div>
 
     <div class="table-wrapper">
       <table>
         <thead>
           <tr>
-            <th>Case ID</th>
+            <th>Type</th>
+            <th>ID</th>
             <th>Company</th>
             <th>Invoice</th>
             <th>Amount</th>
-            <th>Customer Intent</th>
             <th>Status</th>
-            <th>Last Action</th>
+            <th>Details / Last Action</th>
           </tr>
         </thead>
         <tbody id="caseFeed">
           <tr>
-            <td colspan="7" style="text-align:center;padding:30px;color:#64748B;">Loading case records...</td>
+            <td colspan="7" style="text-align:center;padding:30px;color:#64748B;">Loading records...</td>
           </tr>
         </tbody>
       </table>

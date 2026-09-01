@@ -66,48 +66,85 @@ async function handleSimulateReply(e) {
 
 async function loadData() {
   try {
+    // 1. Recovery Stats
     const statsRes = await fetch('/dashboard/stats');
-    const stats = await statsRes.json();
-    
-    document.getElementById('atRisk').innerText = formatMoney(stats.at_risk);
-    document.getElementById('recovered').innerText = formatMoney(stats.recovered);
-    document.getElementById('promised').innerText = formatMoney(stats.promised);
-    document.getElementById('escalated').innerText = stats.escalated || 0;
+    if (statsRes.ok) {
+      const stats = await statsRes.json();
+      if (document.getElementById('totalCases')) document.getElementById('totalCases').innerText = stats.total_cases || 0;
+      if (document.getElementById('atRisk')) document.getElementById('atRisk').innerText = formatMoney(stats.at_risk);
+      if (document.getElementById('recovered')) document.getElementById('recovered').innerText = formatMoney(stats.recovered);
+      if (document.getElementById('promised')) document.getElementById('promised').innerText = formatMoney(stats.promised);
+      if (document.getElementById('escalated')) document.getElementById('escalated').innerText = stats.escalated || 0;
+    }
 
-    const casesRes = await fetch('/dashboard/cases?limit=20');
-    const cases = await casesRes.json();
+    // 2. PTP Stats
+    const ptpRes = await fetch('/dashboard/ptp_stats');
+    if (ptpRes.ok) {
+      const ptp = await ptpRes.json();
+      const promised = Number(ptp.promised_amount || 0);
+      const recoveredPtp = Number(ptp.recovered_via_ptp || 0);
+      const rate = promised > 0 ? ((recoveredPtp / promised) * 100) : 0;
+
+      if (document.getElementById('totalPTPs')) document.getElementById('totalPTPs').innerText = ptp.total_ptps || 0;
+      if (document.getElementById('activePTPs')) document.getElementById('activePTPs').innerText = ptp.active || 0;
+      if (document.getElementById('completedPTPs')) document.getElementById('completedPTPs').innerText = ptp.completed || 0;
+      if (document.getElementById('brokenPTPs')) document.getElementById('brokenPTPs').innerText = ptp.broken || 0;
+      if (document.getElementById('ptpRecoveryRate')) document.getElementById('ptpRecoveryRate').innerText = rate.toFixed(1) + '%';
+      if (document.getElementById('ptpRecoverySub')) document.getElementById('ptpRecoverySub').innerText = `${formatMoney(recoveredPtp)} recovered of ${formatMoney(promised)} promised`;
+    }
+
+    // 3. Activity / Case Feed
+    const activityRes = await fetch('/dashboard/activity');
+    let activity = [];
+    if (activityRes.ok) {
+      activity = await activityRes.json();
+    } else {
+      const casesRes = await fetch('/dashboard/cases?limit=20');
+      if (casesRes.ok) {
+        const cases = await casesRes.json();
+        activity = cases.map(c => ({
+          type: 'case',
+          id: c.case_id,
+          company_id: c.company_id,
+          invoice_id: c.invoice_id,
+          amount: c.amount,
+          status: c.status,
+          last_action: c.last_action
+        }));
+      }
+    }
+
     const tbody = document.getElementById('caseFeed');
-    
-    if (!cases || cases.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748B;padding:30px;">No cases found yet. Ingest an invoice webhook or trigger the orchestrator.</td></tr>';
+    if (!tbody) return;
+
+    if (!activity || activity.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748B;padding:30px;">No activity found yet. Ingest an invoice webhook or trigger the orchestrator.</td></tr>';
       return;
     }
-    
-    tbody.innerHTML = cases.map(c => {
-      const status = c.status || 'new';
-      let intentBadge = '<span style="color:#64748B;">Pending Reply</span>';
-      if (c.customer_intent) {
-        let color = '#3B82F6';
-        if (c.customer_intent === 'dispute') color = '#EF4444';
-        if (c.customer_intent === 'pay_now') color = '#10B981';
-        if (c.customer_intent === 'promise_to_pay') color = '#8B5CF6';
-        intentBadge = `<span style="background:${color}22; color:${color}; padding: 2px 8px; border-radius: 4px; font-weight:600; font-size:11px;">${c.customer_intent.replace('_', ' ')}</span>`;
-        if (c.promised_date) {
-          intentBadge += `<br><small style="color:#A78BFA; font-size:10px;">📅 Due: ${c.promised_date.slice(0,10)}</small>`;
-        }
-      }
+
+    tbody.innerHTML = activity.map(item => {
+      const typeStr = (item.type || 'case').toUpperCase();
+      const typeTag = typeStr === 'PTP' ? '<span class="type-tag type-ptp">PTP</span>' : '<span class="type-tag type-case">CASE</span>';
+      const status = item.status || 'new';
+      let statusClass = 'badge-reminding';
+      if (status === 'ACTIVE') statusClass = 'badge-ptp-active';
+      if (status === 'COMPLETED' || status === 'resolved') statusClass = 'badge-ptp-completed';
+      if (status === 'BROKEN' || status === 'halted') statusClass = 'badge-ptp-broken';
+      if (status === 'escalated') statusClass = 'badge-escalated';
+
       return `
         <tr>
-          <td class="mono">#${c.case_id || '-'}</td>
-          <td class="mono"><strong>${c.company_id || '-'}</strong></td>
-          <td class="mono">${c.invoice_id || '-'}</td>
-          <td class="mono"><strong>${formatMoney(c.amount)}</strong></td>
-          <td>${intentBadge}</td>
-          <td><span class="badge badge-${status}">${status.replace('_', ' ')}</span></td>
-          <td><small>${c.last_action || 'Awaiting action...'}</small></td>
+          <td>${typeTag}</td>
+          <td class="mono">#${item.id || '-'}</td>
+          <td class="mono"><strong>${item.company_id || '-'}</strong></td>
+          <td class="mono">${item.invoice_id || '-'}</td>
+          <td class="mono"><strong>${formatMoney(item.amount)}</strong></td>
+          <td><span class="badge ${statusClass}">${status.replace('_', ' ')}</span></td>
+          <td><small>${item.last_action || 'Awaiting action...'}</small></td>
         </tr>
       `;
     }).join('');
+
   } catch (err) {
     console.error('Failed to load dashboard data:', err);
   }

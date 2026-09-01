@@ -220,15 +220,14 @@ python -m app.seed_data
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Access the dashboard at: **[http://localhost:8000/dashboard](http://localhost:8000/dashboard)**
+Access the dashboard at: **[http://localhost:8000/](http://localhost:8000/)** (or **[http://localhost:8000/dashboard](http://localhost:8000/dashboard)**)
 
 ---
 
 ## 📡 API Reference
 
-### Health & Dashboard
-- `GET /` — Health check endpoint.
-- `GET /dashboard` — Web Dashboard UI.
+### Web Dashboard
+- `GET /` or `GET /dashboard` — Web Dashboard UI.
 - `GET /dashboard/stats` — Partitioned financial recovery stats (`at_risk`, `recovered`, `promised`, `payment_claimed`, `escalated`, `total_cases`, `total_amount`).
 - `GET /dashboard/cases?limit=20` — Case feed with customer intent, status, and last action.
 
@@ -236,6 +235,7 @@ Access the dashboard at: **[http://localhost:8000/dashboard](http://localhost:80
 - `POST /webhooks/b2b_invoice` — Ingest payment failures and overdue invoices from ERP or payment rails.
 - `POST /webhooks/customer_response` — Ingest inbound customer email or portal reply for AI/NLP intent classification and PTP processing.
 - `POST /webhooks/whatsapp` — Ingest inbound WhatsApp messages.
+- `POST /webhooks/ptp_commit` — Directly commit a structured Promise-to-Pay (PTP) installment schedule.
 - `POST /webhooks/payment_received` — Ingest confirmed payment notifications from bank or payment gateway webhooks.
 - `POST /admin/process` — Manually triggers event processing, PTP installment checks, and scheduled case follow-ups.
 
@@ -247,9 +247,9 @@ Access the dashboard at: **[http://localhost:8000/dashboard](http://localhost:80
 # 1. Trigger the orchestrator pipeline
 curl.exe -X POST http://localhost:8000/admin/process
 
-# 2. Simulate Inbound Promise-to-Pay (PTP) via Email
-$body = @{ invoice_id = "INV-001"; message = "We will pay ₹50,000 today and the rest next week"; channel = "email" } | ConvertTo-Json
-Invoke-RestMethod -Uri http://localhost:8000/webhooks/customer_response -Method POST -Body $body -ContentType "application/json" -Headers @{ "X-Webhook-Secret" = "dev-webhook-secret" }
+# 2. Simulate Direct PTP Commit Webhook
+$body = @{ invoice_id = "INV-001"; company_id = "comp_001"; installments = @( @{ amount = 50000; due_date = "2026-09-15" }, @{ amount = 50000; due_date = "2026-09-22" } ); reasoning = "Customer promises two installments" } | ConvertTo-Json -Depth 3
+Invoke-RestMethod -Uri http://localhost:8000/webhooks/ptp_commit -Method POST -Body $body -ContentType "application/json" -Headers @{ "X-Webhook-Secret" = "dev-webhook-secret" }
 
 # 3. Simulate Inbound Pay-Now Claim
 $body = @{ invoice_id = "INV-004"; message = "I want to pay now, please send payment link"; channel = "email" } | ConvertTo-Json

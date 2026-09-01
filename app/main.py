@@ -17,9 +17,9 @@ from app.orchestrator import (
     process_pending_events,
     process_scheduled_cases,
     process_customer_response,
-    process_due_ptp_installments,
     handle_payment_received
 )
+from app.ptp_handlers import process_due_ptp_installments, create_ptp
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -27,7 +27,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # --- Webhook Authentication / Signature Verification ---
 async def verify_webhook_signature(request: Request):
     """
-    Verify HMAC SHA256 signature or shared token on inbound webhooks (Fix for Bug 4).
+    Verify HMAC SHA256 signature or shared token on inbound webhooks.
     """
     secret = os.getenv("WEBHOOK_SECRET")
     sig = (
@@ -59,7 +59,7 @@ async def verify_webhook_signature(request: Request):
 async def lifespan(app: FastAPI):
     await init_db()
     async def worker():
-        print("🔄 B2B Orchestrator started. Checking every 30s...")
+        print("🔄 B2B + PTP Orchestrator started. Checking every 30s...")
         while True:
             try:
                 await process_pending_events()
@@ -74,16 +74,20 @@ async def lifespan(app: FastAPI):
     print("🛑 Orchestrator stopped.")
 
 
-app = FastAPI(title="B2B Receivables Agent", lifespan=lifespan)
+app = FastAPI(title="B2B Receivables + PTP Agent", lifespan=lifespan)
 
 # Mount static directory
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# --- Health ---
+# --- Dashboard HTML Page (Root / and /dashboard) ---
 @app.get("/")
-async def root():
-    return {"message": "B2B Receivables Agent running."}
+@app.get("/dashboard")
+async def dashboard_page():
+    index_file = STATIC_DIR / "index.html"
+    if not index_file.exists():
+        raise HTTPException(status_code=404, detail="Dashboard frontend not found")
+    return FileResponse(index_file)
 
 
 # --- Webhook: Simulate B2B Invoice + Rail Status ---
@@ -168,7 +172,6 @@ async def whatsapp_inbound_webhook(request: Request):
         message = form.get("Body") or form.get("message") or ""
         invoice_id = form.get("invoice_id")
 
-    # If invoice_id not provided in body, attempt to extract from text (e.g. "INV-001")
     if not invoice_id and message:
         import re
         match = re.search(r'\b(INV-\d+)\b', message, re.IGNORECASE)
@@ -186,7 +189,7 @@ async def whatsapp_inbound_webhook(request: Request):
 @app.post("/webhooks/payment_received")
 async def payment_received_webhook(request: Request):
     """
-    Confirmed payment receipt from payment rail / bank webhook (Fix for Bug 3).
+    Confirmed payment receipt from payment rail / bank webhook.
     """
     await verify_webhook_signature(request)
     data = await request.json()
@@ -200,7 +203,37 @@ async def payment_received_webhook(request: Request):
     return await handle_payment_received(invoice_id, float(amount), payment_reference=ref)
 
 
-# --- Admin: Trigger ---
+# --- Webhook: PTP Commit (Customer Promise) ---
+@app.post("/webhooks/ptp_commit")
+async def ptp_commit_webhook(request: Request):
+    """
+    Customer or finance team submits a promise-to-pay.
+    Expected payload:
+    {
+        "invoice_id": "INV-001",
+        "company_id": "comp_001",
+        "installments": [
+            {"amount": 50000, "due_date": "2026-09-15"},
+            {"amount": 50000, "due_date": "2026-09-22"}
+        ],
+        "reasoning": "Customer promises two installments."
+    }
+    """
+    await verify_webhook_signature(request)
+    data = await request.json()
+    invoice_id = data.get('invoice_id')
+    company_id = data.get('company_id')
+    installments = data.get('installments')
+    reasoning = data.get('reasoning', 'Customer promise')
+
+    if not all([invoice_id, company_id, installments]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    ptp_id = await create_ptp(invoice_id, company_id, installments, reasoning)
+    return {"status": "ptp_created", "ptp_id": ptp_id, "message": "PTP created. Auto-approval or human review triggered."}
+
+
+# --- Admin: Process Trigger ---
 @app.post("/admin/process")
 async def manual_process():
     await process_pending_events()
@@ -209,12 +242,9 @@ async def manual_process():
     return {"status": "processing_triggered"}
 
 
-# --- Dashboard API ---
+# --- API: Recovery Stats ---
 @app.get("/dashboard/stats")
 async def dashboard_stats():
-    """
-    Partitioned dashboard metrics (Fix for Bug 5).
-    """
     pool = await get_pool()
     async with pool.acquire() as conn:
         stats = await conn.fetchrow("""
@@ -231,6 +261,51 @@ async def dashboard_stats():
         return dict(stats)
 
 
+# --- API: PTP Stats ---
+@app.get("/dashboard/ptp_stats")
+async def ptp_stats():
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        stats = await conn.fetchrow("""
+            SELECT
+                COUNT(*) AS total_ptps,
+                COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active,
+                COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(CASE WHEN status = 'BROKEN' THEN 1 ELSE 0 END), 0) AS broken,
+                COALESCE(SUM(total_promised_amount), 0) AS promised_amount,
+                COALESCE(SUM(total_received_amount), 0) AS recovered_via_ptp
+            FROM ptp_headers
+        """)
+        return dict(stats)
+
+
+# --- API: Recent Activity (Cases + PTP) ---
+@app.get("/dashboard/activity")
+async def recent_activity(limit: int = 15):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        cases = await conn.fetch("""
+            SELECT 'case' as type, id::text as id, invoice_id, company_id, status, amount, last_action, updated_at
+            FROM cases
+            ORDER BY updated_at DESC
+            LIMIT $1
+        """, limit)
+        ptps = await conn.fetch("""
+            SELECT 'ptp' as type, ptp_id as id, invoice_id, company_id, status, total_promised_amount as amount, llm_reasoning as last_action, updated_at
+            FROM ptp_headers
+            ORDER BY updated_at DESC
+            LIMIT $1
+        """, limit)
+        combined = [dict(c) for c in cases] + [dict(p) for p in ptps]
+        combined.sort(key=lambda x: x['updated_at'] if x.get('updated_at') else datetime.min, reverse=True)
+        for item in combined:
+            if isinstance(item.get('updated_at'), datetime):
+                item['updated_at'] = item['updated_at'].isoformat()
+            if item.get('amount') is not None:
+                item['amount'] = float(item['amount'])
+        return combined[:limit]
+
+
 @app.get("/dashboard/cases")
 async def dashboard_cases(limit: int = 20):
     pool = await get_pool()
@@ -243,12 +318,3 @@ async def dashboard_cases(limit: int = 20):
             LIMIT $1
         """, limit)
         return [dict(c) for c in cases]
-
-
-# --- Dashboard HTML Page ---
-@app.get("/dashboard")
-async def dashboard_page():
-    index_file = STATIC_DIR / "index.html"
-    if not index_file.exists():
-        raise HTTPException(status_code=404, detail="Dashboard frontend not found")
-    return FileResponse(index_file)
