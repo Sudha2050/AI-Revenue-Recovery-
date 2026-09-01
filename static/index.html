@@ -46,6 +46,31 @@
     </div>
 
     <div class="section-title">
+      <span>Customer Inbound Response Simulator (AI / NLP Intent Classifier)</span>
+    </div>
+    <div class="card" style="margin-bottom: 24px;">
+      <form id="replyForm" style="display: grid; grid-template-columns: 1fr 2fr 1fr auto; gap: 12px; align-items: end;">
+        <div>
+          <label style="font-size: 12px; color: #94A3B8; display: block; margin-bottom: 4px;">Invoice ID</label>
+          <input type="text" id="simInvoiceId" placeholder="e.g. INV-001" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0F172A; border: 1px solid #334155; color: #F8FAFC;" required>
+        </div>
+        <div>
+          <label style="font-size: 12px; color: #94A3B8; display: block; margin-bottom: 4px;">Customer Message / Reply</label>
+          <input type="text" id="simMessage" placeholder="e.g. We will remit payment by next Monday" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0F172A; border: 1px solid #334155; color: #F8FAFC;" required>
+        </div>
+        <div>
+          <label style="font-size: 12px; color: #94A3B8; display: block; margin-bottom: 4px;">Channel</label>
+          <select id="simChannel" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0F172A; border: 1px solid #334155; color: #F8FAFC;">
+            <option value="whatsapp">💬 WhatsApp</option>
+            <option value="email">📧 Email</option>
+          </select>
+        </div>
+        <button type="submit" class="btn-action btn-primary" id="simSubmitBtn" style="padding: 8px 16px;">🧠 Classify & Process</button>
+      </form>
+      <div id="simFeedback" style="margin-top: 10px; font-size: 13px; display: none;"></div>
+    </div>
+
+    <div class="section-title">
       <span>Case Feed</span>
     </div>
 
@@ -57,7 +82,7 @@
             <th>Company</th>
             <th>Invoice</th>
             <th>Amount</th>
-            <th>Root Cause</th>
+            <th>Customer Intent</th>
             <th>Status</th>
             <th>Last Action</th>
           </tr>

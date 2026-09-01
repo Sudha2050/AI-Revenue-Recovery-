@@ -8,6 +8,7 @@ sole authority on whether that suggestion is actually allowed to execute. Keepin
 every guardrail in one file means "0 compliance violations" is a claim you can point
 to a single function to verify, instead of two files that could drift apart.
 """
+import json
 from datetime import datetime, timedelta, timezone
 
 CONTACT_CAP_PER_WEEK = 2
@@ -48,7 +49,7 @@ def _recent_contact_count(contact_timestamps, window_days=CONTACT_WINDOW_DAYS):
     if isinstance(contact_timestamps, str):
         try:
             contact_timestamps = json.loads(contact_timestamps)
-        except Exception:
+        except (ValueError, TypeError, json.JSONDecodeError):
             return None
     if not isinstance(contact_timestamps, list):
         return None

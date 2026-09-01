@@ -67,7 +67,38 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS ptp_headers (
+                ptp_id TEXT PRIMARY KEY,
+                invoice_id TEXT REFERENCES invoices(invoice_id),
+                company_id TEXT REFERENCES companies(company_id),
+                status TEXT DEFAULT 'PENDING_APPROVAL',
+                total_promised_amount DECIMAL,
+                total_received_amount DECIMAL DEFAULT 0,
+                llm_reasoning TEXT,
+                approved_by TEXT,
+                approved_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS ptp_installments (
+                id SERIAL PRIMARY KEY,
+                ptp_id TEXT REFERENCES ptp_headers(ptp_id),
+                sequence INT,
+                amount DECIMAL,
+                due_date DATE,
+                status TEXT DEFAULT 'PENDING',
+                actual_paid_amount DECIMAL DEFAULT 0,
+                paid_at TIMESTAMP,
+                reminder_count INT DEFAULT 0,
+                last_reminder_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS contact_timestamps JSONB DEFAULT '[]'::jsonb;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS active_ptp_id TEXT;
+            ALTER TABLE cases ADD COLUMN IF NOT EXISTS customer_intent TEXT;
+            ALTER TABLE cases ADD COLUMN IF NOT EXISTS customer_response TEXT;
+            ALTER TABLE cases ADD COLUMN IF NOT EXISTS promised_date TIMESTAMP;
             DO $$
             BEGIN
                 IF NOT EXISTS (

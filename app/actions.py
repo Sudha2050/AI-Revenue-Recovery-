@@ -18,6 +18,15 @@ async def send_email(to: str, subject: str, body: str):
         print("   ✅ Email sent (simulated).")
     return {"success": True}
 
+async def send_whatsapp(to_phone: str, message: str):
+    """Send WhatsApp message (simulated or via Twilio / Meta WhatsApp Business API)."""
+    print(f"💬 [ACTION] WhatsApp to {to_phone}: {message[:100]}...")
+    if DRY_RUN:
+        print("   🏜️ DRY RUN: would send WhatsApp message.")
+    else:
+        print("   ✅ WhatsApp message sent (simulated).")
+    return {"success": True}
+
 async def send_slack_alert(message: str):
     """Send alert to Slack (RM handoff queue)."""
     print(f"👨💼 [ACTION] Slack alert: {message[:100]}...")

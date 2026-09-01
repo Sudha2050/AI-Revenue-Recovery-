@@ -66,6 +66,9 @@ async def seed():
             updated_at TIMESTAMP DEFAULT NOW()
         );
         ALTER TABLE invoices ADD COLUMN IF NOT EXISTS contact_timestamps JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE cases ADD COLUMN IF NOT EXISTS customer_intent TEXT;
+        ALTER TABLE cases ADD COLUMN IF NOT EXISTS customer_response TEXT;
+        ALTER TABLE cases ADD COLUMN IF NOT EXISTS promised_date TIMESTAMP;
         DO $$
         BEGIN
             IF NOT EXISTS (

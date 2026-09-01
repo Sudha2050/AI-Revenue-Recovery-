@@ -7,12 +7,21 @@
 [![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-orange?style=for-the-badge&logo=google)](https://ai.google.dev)
 
 > 🚀 **[Buildathon] Project Submission**  
-> An autonomous, compliance-first B2B Receivables Recovery & Intelligent Dunning Agent engineered for Payments Banks and enterprise B2B merchants. It manages multi-rail payment failures (NEFT, RTGS, UPI Autopay, NACH), enforces strict regulatory guardrails (**RBI Fair Practices Code** & **NPCI UPI Guidelines**), uses a hybrid Rules + Google Gemini LLM reasoning engine, and delivers automated dunning, payment installment plans, and relationship manager (RM) escalations.
+> An autonomous, compliance-first B2B Receivables Recovery & Intelligent Dunning Agent engineered for Payments Banks and enterprise B2B merchants. It manages multi-rail payment failures (NEFT, RTGS, UPI Autopay, NACH), enforces strict regulatory guardrails (**RBI Fair Practices Code** & **NPCI UPI Guidelines**), uses a hybrid Rules + Google Gemini LLM reasoning engine, and delivers closed-loop recovery with conversational **AI/NLP Inbound Intent Classification**, structured **Promise-to-Pay (PTP) Installment Tracking**, authenticated payment webhooks, multi-channel communications (Email, WhatsApp, Slack), and real-time dashboard analytics.
 
 ---
 
 ## 🌟 Key Highlights & Innovations
 
+- 🤝 **Comprehensive Promise-To-Pay (PTP) Engine**:
+  - **Multi-Installment Extraction**: Parses customer messages via LLM/NLP into structured installment schedules (amount + due date).
+  - **Automated Approval Gating**: Auto-approves PTP plans $\le \text{₹100,000}$ with $\le 2$ installments (`ACTIVE`); routes larger promises to human RM approval (`PENDING_APPROVAL`).
+  - **Breach Recovery Workflow**: Monitors due dates in background (`process_due_ptp_installments`). Missed payments trigger a 3-step bounded reminder sequence (`MISSED`), escalating to `BROKEN` and alerting RMs if unfulfilled.
+- 💳 **Verified Payment Recovery Safeguards**:
+  - Eliminates unverified revenue inflation: customer claims of `pay_now` transition cases to `payment_claimed` and issue payment links.
+  - Invoices are **only** marked `resolved`/`recovered` upon authentic bank or payment gateway webhook confirmation (`/webhooks/payment_received`).
+- 🔒 **Authenticated Webhook Security (HMAC SHA256)**:
+  - Signature verification (`X-Signature` / `X-Webhook-Secret`) on all inbound webhook routes prevents spoofed response or dispute events.
 - 🛡️ **Zero Compliance Violations (Hard Guardrails)**:
   - **RBI Fair Practices Code**: Maximum 2 automated contact attempts per 7-day rolling window per invoice.
   - **NPCI UPI Autopay**: Strict cap of 3 retries for UPI rails before mandatory human handoff.
@@ -21,71 +30,82 @@
 - 🧠 **Hybrid Diagnosis Engine (Rules + Gemini LLM)**:
   - Fast, deterministic rules for rail failures (`insufficient_funds`, `mandate_expired`, `account_closed`) and liquidity signals.
   - Google Gemini LLM fallback for complex, ambiguous, or mixed-signal B2B cases.
-- 🔍 **Transparent Audit Trail & Policy Overrides**:
-  - Distinguishes between what AI suggested and what regulatory policy enforced.
-  - Full case history tracked in PostgreSQL with reasonings and scheduled follow-ups.
-- 📬 **Action Channels & Smart Dunning**:
-  - Automated Accounts Payable (AP) email dunning with dynamic overdue context.
-  - Formal installment plan document generation.
-  - High-priority Slack alerts for Relationship Manager (RM) escalation queues.
+- 💬 **Conversational AI / NLP Inbound Intent Classifier**:
+  - Ingests customer replies via **Email** & **WhatsApp** webhooks (`/webhooks/customer_response`, `/webhooks/whatsapp`).
+  - Classifies customer intent into:
+    - **`pay_now`**: Issues checkout links and transitions case to `payment_claimed` (awaiting payment webhook).
+    - **`promise_to_pay` (PTP)**: Extracts installment schedule, creates PTP record, applies approval gating, and links active PTP monitoring.
+    - **`dispute`**: Flags company/invoice, immediately halts dunning, and escalates to Relationship Manager with dispute context.
+    - **`general_inquiry`**: Routes to RM and returns context-aware automated response.
+- 📲 **Multi-Channel Orchestration**:
+  - Automated Accounts Payable (AP) **Email** dunning.
+  - Direct **WhatsApp** reminders and interactive message parsing.
+  - High-priority **Slack** alerts for Relationship Manager (RM) escalation queues.
 - 📊 **Real-Time Operations Dashboard**:
-  - Live KPIs: **₹ At Risk**, **₹ Recovered**, **₹ Promised**, **RM Escalations**, and **Compliance Violations (0)**.
-  - Real-time case feed and manual orchestrator execution triggers.
+  - Partitioned, non-overlapping KPIs: **₹ At Risk**, **₹ Recovered**, **₹ Promised**, **₹ Payment Claimed**, **₹ Escalated**, and **Total Cases**.
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ End-to-End Workflow Diagram
+
+![Autonomous B2B Revenue Recovery AI Agent Workflow Architecture](static/images/workflow_diagram.jpg)
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                     DATA SOURCES                                        │
-│  ┌─────────────────────────┐   ┌──────────────────────────┐   ┌──────────────────────┐  │
-│  │   ERP / Billing System  │   │   Banking & Payment Rail │   │  Company Context     │  │
-│  │  (Invoices, Due Dates,  │   │   (NEFT, RTGS, UPI,      │   │  (LTV, Balance Trend,│  │
-│  │   Amounts, Overdue Days)│   │    NACH Failure Codes)   │   │   Disputes, AP Info) │  │
-│  └────────────┬────────────┘   └────────────┬─────────────┘   └──────────┬───────────┘  │
-│               │                             │                            │              │
-│               └─────────────────────────────┼────────────────────────────┘              │
-│                                             ▼                                           │
-│                       ┌───────────────────────────────────────────┐                     │
-│                       │          FASTAPI WEBHOOK INGESTION        │                     │
-│                       │        POST /webhooks/b2b_invoice         │                     │
-│                       └─────────────────────┬─────────────────────┘                     │
-│                                             │                                           │
-│                                             ▼                                           │
-│                       ┌───────────────────────────────────────────┐                     │
-│                       │       PostgreSQL (State & Audit DB)       │                     │
-│                       │   • companies   • invoices                │                     │
-│                       │   • raw_events  • cases                   │                     │
-│                       └─────────────────────┬─────────────────────┘                     │
-│                                             │                                           │
-│                                             ▼                                           │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                           ORCHESTRATION PIPELINE                                  │  │
-│  │                                                                                   │  │
-│  │   [Step 1: DETECT]        Fetch unhandled raw events (FOR UPDATE SKIP LOCKED)     │  │
-│  │          │                                                                        │  │
-│  │   [Step 2: CONTEXT]       Fetch Invoice + Company Risk Profile & Payment History  │  │
-│  │          │                                                                        │  │
-│  │   [Step 3: DIAGNOSE]      Deterministic Rules ──► Gemini 1.5 Flash LLM Fallback   │  │
-│  │          │                                                                        │  │
-│  │   [Step 4: COMPLIANCE]    Policy Engine (RBI 2/wk Cap, NPCI UPI 3-Retries,        │  │
-│  │          │                Plan Limits, Dispute/Freeze Hard-Stops)                 │  │
-│  │          │                                                                        │  │
-│  │   [Step 5: EXECUTE]       Email Dunning | Plan Generation | Slack RM Escalation   │  │
-│  │          │                                                                        │  │
-│  │   [Step 6: AUDIT]         Upsert Cases Table with Status & Overridden Reasonings   │  │
-│  └──────────────────────────────────────────┬────────────────────────────────────────┘  │
-│                                             │                                           │
-│                                             ▼                                           │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                       LIVE WEB DASHBOARD & REST API                               │  │
-│  │   • GET /dashboard          Interactive HTML5/CSS3 Dashboard                      │  │
-│  │   • GET /dashboard/stats    Financial KPI Aggregations (₹ At Risk, Recovered)     │  │
-│  │   • GET /dashboard/cases    Case Feed & Reasoning Audit Log                       │  │
-│  │   • POST /admin/process     Manual Orchestrator Pipeline Trigger                  │  │
-│  └───────────────────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+                  ┌──────────────────┐
+                  │ Invoice System   │ (ERP, Billing, Bank Rails)
+                  └────────┬─────────┘
+                           ↓
+                  ┌──────────────────┐
+                  │ Invoice Database │ (invoices, companies, ptp_headers, raw_events)
+                  └────────┬─────────┘
+                           ↓
+                  ┌──────────────────┐
+                  │ Receivables      │
+                  │ Monitoring Agent │ (process_pending_events & process_due_ptp_installments)
+                  └────────┬─────────┘
+                           ↓
+                 Is payment confirmed?
+                     /          \
+                   YES           NO
+                   ↓              ↓
+              Close Case     Check Due Date & Rail Context
+                                  ↓
+                         ┌─────────────────┐
+                         │ Choose Strategy │ (Rules + Gemini LLM)
+                         └────────┬────────┘
+                                  ↓
+                    ┌─────────────┼─────────────┐
+                    ↓             ↓             ↓
+                 Reminder      Overdue       Escalate
+                    ↓             ↓             ↓
+                  Email        WhatsApp      Slack RM
+                    \             |             /
+                     \            |            /
+                      └───────────┼───────────┘
+                                  ↓
+                           Customer Response (HMAC Authenticated Webhook)
+                                  ↓
+                          ┌───────────────┐
+                          │ AI/NLP Agent  │ (Gemini Intent Engine)
+                          └───────┬───────┘
+                                  ↓
+                      Understand Customer Intent
+                                  ↓
+          ┌──────────────┬────────┴────────────┬─────────────┐
+          ↓              ↓                     ↓             ↓
+       Pay now       Promise to Pay         Dispute      No response
+          ↓              ↓                     ↓             ↓
+       Payment       PTP Engine &          Halt & RM      Follow-up
+       Link Sent    Installment Schedule   Escalate          ↓
+          ↓              ↓                                Escalate
+     Awaiting      Approval Gating
+     Webhook     (Auto <= 100k, else RM)
+          ↓              ↓
+   Confirmed Pay?   Check Due Dates
+    /         \      /         \
+  YES          NO  PAID      MISSED
+   ↓            ↓   ↓          ↓
+ Resolved  Wait/Retry Close  3x Retry -> BROKEN -> RM
 ```
 
 ---
@@ -96,7 +116,7 @@ The **Policy Engine** (`app/policy_engine.py`) acts as the single authoritative 
 
 | Rule / Regulation | Condition | Enforced Policy Action |
 | :--- | :--- | :--- |
-| **Dispute Flag** | `company.dispute_flag == True` | `halt` (0 automated contact permitted, notify RM) |
+| **Dispute Flag** | `company.dispute_flag == True` OR Customer replies with dispute | `halt` (0 automated contact permitted, notify RM) |
 | **Willful Default** | `company.willful_default == True` | `halt` (Immediate freeze on dunning, credit risk review) |
 | **Account Frozen** | `company.account_frozen == True` | `rm_handoff` (Mandatory RM check before action) |
 | **RBI Contact Cap** | ≥ 2 contacts in last 7 days | `rm_handoff` (`contact_cap_reached`) |
@@ -109,8 +129,9 @@ The **Policy Engine** (`app/policy_engine.py`) acts as the single authoritative 
 
 - **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Python 3.13) + [Uvicorn](https://www.uvicorn.org/)
 - **Database Engine**: PostgreSQL with async connection pooling via [asyncpg](https://github.com/MagicStack/asyncpg)
-- **AI / LLM Engine**: [Google Generative AI (Gemini 1.5 Flash)](https://ai.google.dev/)
-- **Communication Channels**: SendGrid (Email), Slack SDK (RM Alerts), Twilio (SMS)
+- **AI / NLP Engine**: [Google Generative AI (Gemini 1.5 Flash)](https://ai.google.dev/)
+- **Security**: HMAC SHA256 Webhook Signature Verification (`X-Signature` / `X-Webhook-Secret`)
+- **Communication Channels**: Email (SendGrid/SMTP), WhatsApp Business API / Twilio, Slack SDK (RM Alerts)
 - **Frontend Dashboard**: Vanilla HTML5, Modern CSS Design System, Vanilla JS (Auto-polling every 10s)
 
 ---
@@ -120,11 +141,11 @@ The **Policy Engine** (`app/policy_engine.py`) acts as the single authoritative 
 ```text
 Revenue-recovery-agent/
 ├── app/
-│   ├── actions.py         # Multi-channel execution (Email, Slack alerts, Plan generation)
-│   ├── db.py              # Async PostgreSQL pool lifecycle & auto-schema migration
-│   ├── llm_client.py      # Google Gemini 1.5 Flash B2B diagnosis with mock fallbacks
-│   ├── main.py            # FastAPI routes, webhooks, lifespan background worker & dashboard
-│   ├── orchestrator.py    # 6-step recovery pipeline with concurrency locking & workers
+│   ├── actions.py         # Multi-channel execution (Email, WhatsApp, Slack RM, Plan generation)
+│   ├── db.py              # Async PostgreSQL pool lifecycle & PTP table migrations
+│   ├── llm_client.py      # Gemini 1.5 Flash B2B diagnosis & NLP Customer Intent Classifier
+│   ├── main.py            # FastAPI routes, HMAC security, webhooks, lifespan worker & dashboard APIs
+│   ├── orchestrator.py    # 6-step recovery pipeline, PTP state machine, breach recovery & intent router
 │   ├── policy_engine.py   # RBI Fair Practices Code & NPCI compliance guardrails
 │   ├── poller.py          # Background ERP polling integration template
 │   ├── schemas.py         # Pydantic data schemas
@@ -133,7 +154,7 @@ Revenue-recovery-agent/
 │   ├── css/
 │   │   └── style.css      # Premium dark-mode dashboard styling
 │   ├── js/
-│   │   └── app.js         # Real-time dashboard KPI & case feed updater
+│   │   └── app.js         # Real-time dashboard KPI, case feed & intent simulator
 │   └── index.html         # Live Web Dashboard
 ├── .env.example           # Environment variable template
 ├── .gitignore             # Git ignore configuration
@@ -148,7 +169,7 @@ Revenue-recovery-agent/
 ### 1. Prerequisites
 - Python 3.10+ (Tested on Python 3.13)
 - PostgreSQL database instance
-- *(Optional)* `GEMINI_API_KEY`, `SLACK_WEBHOOK_URL`, `SENDGRID_API_KEY`
+- *(Optional)* `GEMINI_API_KEY`, `SLACK_WEBHOOK_URL`, `WEBHOOK_SECRET`
 
 ### 2. Clone & Setup Virtual Environment
 
@@ -179,14 +200,15 @@ Create a `.env` file in the project root:
 DATABASE_URL=postgresql://postgres:password@localhost:5432/revenue_db
 GEMINI_API_KEY=your_gemini_api_key
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+WEBHOOK_SECRET=dev-webhook-secret
 DRY_RUN=true
 ```
 
-> **Note**: Setting `DRY_RUN=true` enables safe simulation of emails, plan document creation, and Slack alerts without sending live traffic.
+> **Note**: Setting `DRY_RUN=true` enables safe simulation of emails, WhatsApp messages, plan document creation, and Slack alerts without sending live traffic.
 
 ### 5. Seed Database Schema & Demo Records
 
-Initialize tables and seed sample B2B companies, invoices, and failure events:
+Initialize tables (including `ptp_headers` & `ptp_installments`) and seed sample B2B companies, invoices, and failure events:
 
 ```bash
 python -m app.seed_data
@@ -204,54 +226,46 @@ Access the dashboard at: **[http://localhost:8000/dashboard](http://localhost:80
 
 ## 📡 API Reference
 
-### Health & Core
+### Health & Dashboard
 - `GET /` — Health check endpoint.
 - `GET /dashboard` — Web Dashboard UI.
+- `GET /dashboard/stats` — Partitioned financial recovery stats (`at_risk`, `recovered`, `promised`, `payment_claimed`, `escalated`, `total_cases`, `total_amount`).
+- `GET /dashboard/cases?limit=20` — Case feed with customer intent, status, and last action.
 
-### Webhook Ingestion
+### Webhook Ingestion (HMAC Authenticated)
 - `POST /webhooks/b2b_invoice` — Ingest payment failures and overdue invoices from ERP or payment rails.
-  ```json
-  {
-    "invoice_id": "INV-101",
-    "company_id": "comp_001",
-    "amount": 250000,
-    "due_date": "2026-08-01T00:00:00",
-    "payment_rail": "NEFT",
-    "failure_code": "insufficient_funds"
-  }
-  ```
-
-### Orchestrator & Dashboard
-- `POST /admin/process` — Manually triggers event processing and scheduled case follow-ups.
-- `GET /dashboard/stats` — Returns financial recovery stats:
-  ```json
-  {
-    "total_cases": 4,
-    "at_risk": 780000.0,
-    "recovered": 0.0,
-    "promised": 0.0,
-    "escalated": 0.0
-  }
-  ```
-- `GET /dashboard/cases?limit=20` — Retrieves recent case feeds, statuses, actions, and audit logs.
+- `POST /webhooks/customer_response` — Ingest inbound customer email or portal reply for AI/NLP intent classification and PTP processing.
+- `POST /webhooks/whatsapp` — Ingest inbound WhatsApp messages.
+- `POST /webhooks/payment_received` — Ingest confirmed payment notifications from bank or payment gateway webhooks.
+- `POST /admin/process` — Manually triggers event processing, PTP installment checks, and scheduled case follow-ups.
 
 ---
 
-## 🧪 Testing with cURL / PowerShell
+## 🧪 Testing with PowerShell & cURL
 
 ```powershell
-# Trigger the orchestrator pipeline (Windows PowerShell)
+# 1. Trigger the orchestrator pipeline
 curl.exe -X POST http://localhost:8000/admin/process
 
-# Fetch Dashboard KPI Stats
-curl.exe http://localhost:8000/dashboard/stats
+# 2. Simulate Inbound Promise-to-Pay (PTP) via Email
+$body = @{ invoice_id = "INV-001"; message = "We will pay ₹50,000 today and the rest next week"; channel = "email" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8000/webhooks/customer_response -Method POST -Body $body -ContentType "application/json" -Headers @{ "X-Webhook-Secret" = "dev-webhook-secret" }
 
-# Fetch Case Records
-curl.exe http://localhost:8000/dashboard/cases
+# 3. Simulate Inbound Pay-Now Claim
+$body = @{ invoice_id = "INV-004"; message = "I want to pay now, please send payment link"; channel = "email" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8000/webhooks/customer_response -Method POST -Body $body -ContentType "application/json" -Headers @{ "X-Webhook-Secret" = "dev-webhook-secret" }
+
+# 4. Confirm Payment via Gateway Webhook (Resolves Invoice)
+$body = @{ invoice_id = "INV-004"; amount = 100000; payment_reference = "TXN-998877" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8000/webhooks/payment_received -Method POST -Body $body -ContentType "application/json" -Headers @{ "X-Webhook-Secret" = "dev-webhook-secret" }
+
+# 5. Simulate Inbound Dispute via WhatsApp
+$body = @{ invoice_id = "INV-002"; message = "Please hold, we dispute this invoice amount. Deliverables incomplete."; channel = "whatsapp" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8000/webhooks/whatsapp -Method POST -Body $body -ContentType "application/json" -Headers @{ "X-Webhook-Secret" = "dev-webhook-secret" }
 ```
 
 ---
 
 ## 🏆 Razorpay Build-a-thon Submission
 
-This solution tackles the multi-billion dollar problem of B2B payment failure & involuntary receivables delays. By aligning payment rail intelligence with strict regulatory standards (RBI Fair Practices & NPCI UPI rules), it ensures high recovery rates without compliance risks.
+This solution tackles the multi-billion dollar problem of B2B payment failure & involuntary receivables delays. By combining multi-rail intelligence, strict compliance guardrails (RBI & NPCI), multi-channel dunning (Email, WhatsApp, Slack), structured PTP installment tracking, HMAC webhook security, and verified closed-loop recovery, it maximizes cash recovery while eliminating regulatory and operational risk.
